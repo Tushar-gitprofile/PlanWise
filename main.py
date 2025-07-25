@@ -18,7 +18,7 @@ load_dotenv()
 # Configure Streamlit page
 st.set_page_config(
     page_title="PlanWise",
-    page_icon="\ud83d\udcb0",
+    page_icon=":moneybag:",
     layout="wide",
     initial_sidebar_state="expanded"
 )
