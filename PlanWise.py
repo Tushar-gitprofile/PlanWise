@@ -9,11 +9,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.cluster import KMeans
 import pickle
 import random
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure Streamlit page
 st.set_page_config(
     page_title="PlanWise",
-    page_icon="💰",
+    page_icon="\ud83d\udcb0",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -21,9 +26,7 @@ st.set_page_config(
 # Initialize session state for models
 @st.cache_resource
 def load_or_train_models():
-    """Load pre-trained models or train new ones"""
     try:
-        # Try to load existing models
         with open('rf_model.pkl', 'rb') as f:
             rf_model = pickle.load(f)
         with open('lr_model.pkl', 'rb') as f:
@@ -32,11 +35,9 @@ def load_or_train_models():
             kmeans = pickle.load(f)
         return rf_model, lr_model, kmeans
     except FileNotFoundError:
-        # Train new models if files don't exist
         return train_models()
 
 def generate_user_record():
-    """Generate synthetic user data for training"""
     income = random.randint(30000, 150000)
     expense = random.randint(20000, int(income * 0.8))
     sip = random.randint(1000, int(income * 0.3))
@@ -77,34 +78,27 @@ def generate_user_record():
     }
 
 def train_models():
-    """Train the ML models with synthetic data"""
     with st.spinner("Training ML models... This may take a moment."):
-        # Generate training data
         dataset = [generate_user_record() for _ in range(500)]
         df_train = pd.DataFrame(dataset)
-        
-        # Define features
         features = [
             'monthly_income', 'monthly_expense', 'sip_investment',
             'epf_contribution', 'other_investments', 'credit_score',
             'home_loan_emi', 'personal_loan_emi', 'total_savings',
             'total_loans', 'years_to_goal', 'total_investment', 'net_income'
         ]
-        
         X = df_train[features]
         y = df_train['estimated_corpus']
-        
-        # Train models
+
         rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
         rf_model.fit(X, y)
-        
+
         lr_model = LinearRegression()
         lr_model.fit(X, y)
-        
+
         kmeans = KMeans(n_clusters=3, random_state=42)
         kmeans.fit(X)
-        
-        # Save models
+
         try:
             with open('rf_model.pkl', 'wb') as f:
                 pickle.dump(rf_model, f)
@@ -113,57 +107,54 @@ def train_models():
             with open('kmeans_model.pkl', 'wb') as f:
                 pickle.dump(kmeans, f)
         except:
-            pass  # Continue even if saving fails
-            
+            pass
+
         return rf_model, lr_model, kmeans
 
 def calculate_goal_gap(goal, current_year=2025, inflation_rate=0.06):
-    """Calculate inflation-adjusted goal amount"""
     years_to_goal = goal["goal_year"] - current_year
     inflated_goal = goal["goal_amount"] * ((1 + inflation_rate) ** years_to_goal)
     return round(inflated_goal, 2), years_to_goal
 
 def configure_gemini():
-    """Configure Gemini API"""
-    api_key = st.secrets.get("GEMINI_API_KEY", "AIzaSyBNiGgwpvSra428_gZEr8LGiI_CDI3oKMY")
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        st.error("\u274c Gemini API key not found. Set it in your environment.")
+        st.stop()
     genai.configure(api_key=api_key)
     return genai.GenerativeModel("models/gemini-1.5-pro")
 
 def generate_financial_advice(user_data, user_goals, rf_model, model):
-    """Generate ML predictions and AI advice"""
     features = [
         'monthly_income', 'monthly_expense', 'sip_investment',
         'epf_contribution', 'other_investments', 'credit_score',
         'home_loan_emi', 'personal_loan_emi', 'total_savings',
         'total_loans', 'years_to_goal', 'total_investment', 'net_income'
     ]
-    
     df_user = pd.DataFrame([user_data])
     df_user["net_income"] = df_user["monthly_income"] - df_user["monthly_expense"]
     df_user["total_investment"] = df_user["sip_investment"] + df_user["epf_contribution"] + df_user["other_investments"]
-    
+
     results = []
-    
     for goal in user_goals:
         inflated_target, years_left = calculate_goal_gap(goal)
         df_user["years_to_goal"] = years_left
-        
         X_user = df_user[features]
         predicted_corpus = rf_model.predict(X_user)[0]
-        
+
         prompt = f"""
         The user wants to achieve the goal: {goal['goal_name']} by {goal['goal_year']}.
         The target (inflation adjusted) is ₹{inflated_target:,.2f}, but the ML model predicts they will have ₹{predicted_corpus:,.2f}.
         Suggest personalized financial advice to help them meet this goal.
         Be practical and use bullet points.
         """
-        
+
         try:
             response = model.generate_content(prompt)
             gemini_advice = response.text
         except Exception as e:
             gemini_advice = f"Error generating advice: {str(e)}"
-        
+
         results.append({
             "goal": goal["goal_name"],
             "year": goal["goal_year"],
@@ -172,10 +163,10 @@ def generate_financial_advice(user_data, user_goals, rf_model, model):
             "gemini_advice": gemini_advice,
             "gap": inflated_target - predicted_corpus
         })
-    
+
     return results
 
-# Load models
+# Load models and Gemini
 rf_model, lr_model, kmeans = load_or_train_models()
 gemini_model = configure_gemini()
 
