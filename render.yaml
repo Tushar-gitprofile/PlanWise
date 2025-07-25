@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: planwise-app
+    env: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run main.py
+    branch: main
+    plan: free
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
